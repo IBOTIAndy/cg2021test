@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - loader - ttf</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+	<body>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - TTFLoader using opentype by gero3
+			<br/>type to enter new text, drag to spin the text
+		</div>
+
+		<script src="./opentype.min.js"></script>
+		<script src="./three.min.js"></script>
+		<script src="./TTFLoader.js"></script>
+		
+		<script>		
+				
+			let container;
+			let camera, cameraTarget, scene, renderer; //相機, 相機目標, 場景, 渲染
+			let group, textMesh1, textMesh2, textGeo, material, textArr; //
+			let firstLetter = true;
+
+			let text = '高等計算機圖學作業';	//中間的旋轉字
+			let timeText = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
+			const height = 20,
+				size = 70,
+				hover = 30,
+				curveSegments = 4,
+				bevelThickness = 2,
+				bevelSize = 1.5;
+
+			let font = null;
+			const mirror = false;
+
+			let targetRotation = 0;
+			let targetRotationOnPointerDown = 0;
+
+			let pointerX = 0;
+			let pointerXOnPointerDown = 0;
+
+			let windowHalfX = window.innerWidth / 2;
+
+			init();
+			animate();
+
+			function init() {
+
+				container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				//(x, y, z) = (-左 +右, +上 -下, +後 -前)
+				// CAMERA
+				// (fov 視野角度, aspect ratio 長寬比例[使用寬除以高], near 相機到該數值之間的物體不會顯示, far 該數值以外的物體不會顯示)
+				camera = new THREE.PerspectiveCamera( 30, window.innerWidth / window.innerHeight, 1, 1500 );
+				camera.position.set( 0, 400, 700 ); //設定相機位置(x, y, z)
+
+				cameraTarget = new THREE.Vector3( 0, 150, 0 ); //拍攝目標的位置(x, y, z)
+
+				// SCENE 環境
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0x000000 ); //背景顏色
+				scene.fog = new THREE.Fog( 0x000000, 250, 1400 ); //底部的霧氣
+
+				// LIGHTS 燈光
+
+				const dirLight = new THREE.DirectionalLight( 0xffffff, 0.125 );
+				dirLight.position.set( 0, 0, 1 ).normalize();
+				scene.add( dirLight );
+
+				const pointLight = new THREE.PointLight( 0xffffff, 1.5 );
+				pointLight.position.set( 0, 100, 90 );
+				pointLight.color.setHSL( Math.random(), 1, 0.5 );
+				scene.add( pointLight );
+
+				material = new THREE.MeshPhongMaterial( { color: 0xffffff, flatShading: true } );
+
+				group = new THREE.Group(); //先建立 後續再加入資料
+				group.position.y = 100;
+
+				scene.add( group );
+
+				const loader = new THREE.TTFLoader(); //讀取字形
+				
+				loader.load( "./edukai-4.0.ttf", function ( json ) {
+				console.log(json)
+					font = new THREE.Font( json );
+					createText();
+
+				} );
+
+				const plane = new THREE.Mesh(
+					new THREE.PlaneGeometry( 10000, 10000 ),
+					new THREE.MeshBasicMaterial( { color: 0xffffff, opacity: 0.5, transparent: true } )
+				);
+				plane.position.y = 100;
+				plane.rotation.x = - Math.PI / 2;
+				scene.add( plane );
+
+				// RENDERER 渲染器
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				container.appendChild( renderer.domElement );
+
+				// EVENTS 活動
+
+				container.style.touchAction = 'none';
+				container.addEventListener( 'pointerdown', onPointerDown );
+
+				document.addEventListener( 'keypress', onDocumentKeyPress );
+				document.addEventListener( 'keydown', onDocumentKeyDown );
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+
+			function onWindowResize() {
+
+				windowHalfX = window.innerWidth / 2;
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function onDocumentKeyDown( event ) {
+
+				if ( firstLetter ) {
+
+					// firstLetter = false;
+					// text = '';
+					for(i=0; i < 12; i++){
+						firstLetter = false;
+						timeText[i] = '';
+					}
+
+				}
+
+				const keyCode = event.keyCode;
+
+				// backspace
+
+				if ( keyCode === 8 ) {
+
+					event.preventDefault();
+
+					// text = text.substring( 0, text.length - 1 );
+					for(i=0; i < 12; i++){
+						timeText = timeText.substring(0, timeText.length - 1);
+						refreshText();
+					}
+					// refreshText();
+
+					return false;
+
+				}
+
+			}
+
+			function onDocumentKeyPress( event ) {
+
+				const keyCode = event.which;
+
+				// backspace
+
+				if ( keyCode === 8 ) {
+
+					event.preventDefault();
+
+				} else {
+
+					const ch = String.fromCharCode( keyCode );
+					// text += ch;
+					for(i=0; i < 12; i++){
+						timeText += ch;
+						refreshText();
+					}
+
+					// refreshText();
+
+				}
+
+			}
+
+			function createText() {	//建立文字
+
+				// textGeo = new THREE.TextGeometry( text, {
+
+				// 	font: font,
+
+				// 	size: size,
+				// 	height: height,
+				// 	curveSegments: curveSegments,
+
+				// 	bevelThickness: bevelThickness,
+				// 	bevelSize: bevelSize,
+				// 	bevelEnabled: true
+
+				// } );
+
+				// textGeo.computeBoundingBox();
+				// textGeo.computeVertexNormals();
+
+				// const centerOffset = - 0.5 * ( textGeo.boundingBox.max.x - textGeo.boundingBox.min.x );
+
+				// textMesh1 = new THREE.Mesh( textGeo, material );
+
+				// textMesh1.position.x = centerOffset;
+				// textMesh1.position.y = hover;
+				// textMesh1.position.z = 0;
+
+				// textMesh1.rotation.x = 0;
+				// textMesh1.rotation.y = Math.PI * 2;
+
+				// group.add( textMesh1 );
+
+				for(i=0; i < 12; i++){
+					textGeo = new THREE.TextGeometry( timeText[i], {
+						font: font,
+
+						size: size,
+						height: height,
+
+						curveSegments: curveSegments,
+						bevelThickness: bevelThickness,
+						bevelSize: bevelSize,
+						bevelEnabled: true
+					} );
+
+					textGeo.computeBoundingBox();
+					textGeo.computeVertexNormals();
+
+					const centerOffset = - 0.5 * ( textGeo.boundingBox.max.x - textGeo.boundingBox.min.x );
+
+					textMesh1 = new THREE.Mesh( textGeo, material );
+
+					// addMesh( textMesh1, x, y, z, centerOffset);
+					if(i == 0){ // 子
+						addMesh(textMesh1, 0, 100, 0, centerOffset);	
+					}
+					else if(i == 1){ // 丑
+						addMesh(textMesh1, 0, 0, 0, centerOffset);							
+					}
+					else if(i == 2){ // 寅 
+						addMesh(textMesh1, 0, 0, 0, centerOffset);							
+					}
+					else if(i == 3){ // 卯
+						addMesh(textMesh1, 100, 0, 0, centerOffset);						
+					}
+					else if(i == 4){ // 辰
+						addMesh(textMesh1, 0, 0, 0, centerOffset);			
+					}
+					else if(i == 5){ // 巳
+						addMesh(textMesh1, 0, 0, 0, centerOffset);			
+					}
+					else if(i == 6){ // 午
+						addMesh(textMesh1, 0, -100, 0, centerOffset);						
+					}
+					else if(i == 7){ // 未
+						addMesh(textMesh1, 0, 0, 0, centerOffset);						
+					}
+					else if(i == 8){ // 申
+						addMesh(textMesh1, 0, 0, 0, centerOffset);						
+					}
+					else if(i == 9){ // 酉
+						addMesh(textMesh1, -100, 0, 0, centerOffset);						
+					}
+					else if(i == 10){ // 戌
+						addMesh(textMesh1, 0, 0, 0, centerOffset);				
+					}
+					else if(i == 11){ // 亥
+						addMesh(textMesh1, 0, 0, 0, centerOffset);						
+					}
+
+					// textMesh1.position.x = centerOffset;
+					// textMesh1.position.y = hover;
+					// textMesh1.position.z = 0;
+
+					// textMesh1.rotation.x = 0;
+					// textMesh1.rotation.y = Math.PI * 2;
+
+					// group.add( textMesh1 );
+				}
+
+				// if ( mirror ) {
+
+				// 	textMesh2 = new THREE.Mesh( textGeo, material );
+
+				// 	textMesh2.position.x = centerOffset;
+				// 	textMesh2.position.y = - hover;
+				// 	textMesh2.position.z = height;
+
+				// 	textMesh2.rotation.x = Math.PI;
+				// 	textMesh2.rotation.y = Math.PI * 2;
+
+				// 	group.add( textMesh2 );
+
+				// }
+
+			}
+
+			function addMesh(textMesh, pointX, pointY, pointZ, centerOffset){
+				textMesh.position.x = centerOffset + pointX;
+				textMesh.position.y = hover + pointY;
+				textMesh.position.z = 0;
+
+				textMesh.rotation.x = 0;
+				textMesh.rotation.y = Math.PI * 2;
+				group.add( textMesh );
+			}
+
+			function refreshText() {
+
+				group.remove( textMesh1 );
+				if ( mirror ) group.remove( textMesh2 );
+
+				for(i=0; i < 12; i++){
+					if( ! timeText[i] ) return;
+				}
+				// if ( ! text ) return;
+
+				createText();
+
+			}
+
+			function onPointerDown( event ) {
+
+				if ( event.isPrimary === false ) return;
+
+				pointerXOnPointerDown = event.clientX - windowHalfX;
+				targetRotationOnPointerDown = targetRotation;
+
+				document.addEventListener( 'pointermove', onPointerMove );
+				document.addEventListener( 'pointerup', onPointerUp );
+
+			}
+
+			function onPointerMove( event ) {
+
+				if ( event.isPrimary === false ) return;
+
+				pointerX = event.clientX - windowHalfX;
+
+				targetRotation = targetRotationOnPointerDown + ( pointerX - pointerXOnPointerDown ) * 0.02;
+
+			}
+
+			function onPointerUp() {
+
+				if ( event.isPrimary === false ) return;
+
+				document.removeEventListener( 'pointermove', onPointerMove );
+				document.removeEventListener( 'pointerup', onPointerUp );
+
+			}
+
+			//
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				group.rotation.y += ( targetRotation - group.rotation.y ) * 0.05;
+
+				camera.lookAt( cameraTarget );
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
